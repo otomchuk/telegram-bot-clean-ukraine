@@ -1,0 +1,26 @@
+{
+  "name": "telegram-bot-clean-ukraine",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/otomchuk/telegram-bot-clean-ukraine.git"
+  },
+  "author": "Olenka Tomchuk",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/otomchuk/telegram-bot-clean-ukraine/issues"
+  },
+  "homepage": "https://github.com/otomchuk/telegram-bot-clean-ukraine#readme",
+  "dependencies": {
+    "node-telegram-bot-api": "^0.28.0"
+  },
+  "devDependencies": {
+    "dotenv": "^4.0.0"
+  }
+}
