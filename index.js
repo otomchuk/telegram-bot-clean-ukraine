@@ -16,37 +16,47 @@ var bot = new TelegramBot(TOKEN, options);
 
 bot.setWebHook(url + '/bot' + TOKEN);
 
+var userLocation = {};
+
 // On command '/start'
 bot.onText(/^\/start/, function(msg) {
   stepOneGetUserLocation(msg).then(function() {
     bot.once('location', function(msg) {
+      userLocation.lat = msg.location.latitude;
+      userLocation.lng = msg.location.longitude;
 
-      var userLocation = {
-        lat: msg.location.latitude,
-        lng: msg.location.longitude
-      };
-
-      stepTwoChooseRawType(msg).then(function() {
-        bot.on('callback_query', function(callbackQuery) {
-
-          sendStepTwoResponce(msg, callbackQuery, userLocation);
-
-          setTimeout(function() {
-            stepThreeChooseWhatToDo(msg).then(function() {
-              waitForStepTheeResponce();
-            });
-          }, 3000);
-        });
-      });
+      stepTwoChooseRawType(msg);
     });
   });
 });
 
-bot.onText(/^\/stop/, function(msg) {
-  bot.sendMessage(msg.chat.id, 'chao-chao');
+bot.on('callback_query', function(callbackQuery) {
+  var msg = callbackQuery.message;
+  sendStepTwoResponce(msg.chat.id, callbackQuery, userLocation);
 
-  bot.removeTextListener(/^\/start/);
-  bot.removeReplyListener();
+  setTimeout(function() {
+    stepThreeChooseWhatToDo(msg.chat.id);
+  }, 3000);
+});
+
+var showAllRecyclingPoint = 'список найближчих пунктів';
+var newSearchRequest = 'новий пошук';
+var stop = 'завершити';
+
+bot.on('message', function(msg) {
+  if (msg.text) {
+    if (msg.text.toLowerCase().includes(showAllRecyclingPoint)) {
+      bot.sendMessage(msg.chat.id, 'Показую');
+    }
+
+    if (msg.text.toLowerCase().indexOf(newSearchRequest) === 0) {
+      bot.sendMessage(msg.chat.id, 'Шукаю');
+    }
+
+    if (msg.text.toLowerCase().includes(stop)) {
+      bot.sendMessage(msg.chat.id, 'Завершую');
+    }
+  }
 });
 
 function stepOneGetUserLocation(msg) {
@@ -88,21 +98,21 @@ function stepTwoChooseRawType(msg) {
 }
 
 // Step-2: responce with closes recycling point
-function sendStepTwoResponce(msg, callbackQuery, userLocation) {
+function sendStepTwoResponce(chatId, callbackQuery, userLocation) {
   var recyclingPoints = DB.getRecyclingPointsFor(callbackQuery.data);
   var closesRecyclingPoint = utils.findClosestLocation(recyclingPoints, userLocation.lat, userLocation.lng);
 
   // Step-2: Responce with closes recycing point
   bot.answerCallbackQuery(callbackQuery.id).then(function() {
-    bot.sendMessage(msg.chat.id, 'Найближчий пункт для прийому: ' + closesRecyclingPoint.description);
+    bot.sendMessage(chatId, 'Найближчий пункт для прийому: ' + closesRecyclingPoint.description);
   });
 
   setTimeout(function() {
-    bot.sendLocation(msg.chat.id, closesRecyclingPoint.lat, closesRecyclingPoint.lng);
+    bot.sendLocation(chatId, closesRecyclingPoint.lat, closesRecyclingPoint.lng);
   }, 1000);
 }
 
-function stepThreeChooseWhatToDo(msg) {
+function stepThreeChooseWhatToDo(chatId) {
   // Options for displaying keyboard that asks about next steps
   var option = {
     'parse_mode': 'Markdown',
@@ -115,25 +125,5 @@ function stepThreeChooseWhatToDo(msg) {
     }
   };
 
-  return bot.sendMessage(msg.chat.id, 'Вам підходить цей пункт прийому?', option);
-}
-
-function waitForStepTheeResponce() {
-  var showAllRecyclingPoint = 'список найближчих пунктів';
-  var newSearchRequest = 'новий пошук';
-  var stop = 'завершити';
-
-  bot.on('message', function(msg) {
-    if (msg.text.toLowerCase().includes(showAllRecyclingPoint)) {
-      bot.sendMessage(msg.chat.id, 'Показую');
-    }
-
-    if (msg.text.toLowerCase().indexOf(newSearchRequest) === 0) {
-      bot.sendMessage(msg.chat.id, 'Шукаю');
-    }
-
-    if (msg.text.toLowerCase().includes(stop)) {
-      bot.sendMessage(msg.chat.id, 'Завершую');
-    }
-  });
+  return bot.sendMessage(chatId, 'Вам підходить цей пункт прийому?', option);
 }
