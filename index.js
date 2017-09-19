@@ -17,21 +17,24 @@ var bot = new TelegramBot(TOKEN, options);
 bot.setWebHook(url + '/bot' + TOKEN);
 
 var userLocation = {};
+var selectedRawType = '';
 
 // On command '/start'
 bot.onText(/^\/start/, function(msg) {
-  stepOneGetUserLocation(msg).then(function() {
+  stepOneGetUserLocation(msg.chat.id).then(function() {
     bot.once('location', function(msg) {
       userLocation.lat = msg.location.latitude;
       userLocation.lng = msg.location.longitude;
 
-      stepTwoChooseRawType(msg);
+      stepTwoChooseRawType(msg.chat.id);
     });
   });
 });
 
 bot.on('callback_query', function(callbackQuery) {
   var msg = callbackQuery.message;
+  selectedRawType = callbackQuery.data;
+
   sendStepTwoResponce(msg.chat.id, callbackQuery, userLocation);
 
   setTimeout(function() {
@@ -46,20 +49,27 @@ var stop = 'завершити';
 bot.on('message', function(msg) {
   if (msg.text) {
     if (msg.text.toLowerCase().includes(showAllRecyclingPoint)) {
-      bot.sendMessage(msg.chat.id, 'Показую');
+      var recyclingPoints = DB.getRecyclingPointsFor(selectedRawType);
+      var response = '';
+
+      recyclingPoints.forEach(function(point) {
+        response = response.concat(point.description + '\n\n');
+      });
+
+      bot.sendMessage(msg.chat.id, response);
     }
 
     if (msg.text.toLowerCase().indexOf(newSearchRequest) === 0) {
-      bot.sendMessage(msg.chat.id, 'Шукаю');
+      stepTwoChooseRawType(msg.chat.id);
     }
 
     if (msg.text.toLowerCase().includes(stop)) {
-      bot.sendMessage(msg.chat.id, 'Завершую');
+      bot.sendMessage(msg.chat.id, 'Дякуємо за те, що сортуєте сміття!');
     }
   }
 });
 
-function stepOneGetUserLocation(msg) {
+function stepOneGetUserLocation(chatId) {
   // Options for displaying keyboard that asks users to share location
   var option = {
     'parse_mode': 'Markdown',
@@ -73,10 +83,10 @@ function stepOneGetUserLocation(msg) {
   };
 
   // Step-1: where are you located
-  return bot.sendMessage(msg.chat.id, 'Де ви знаходитесь?', option);
+  return bot.sendMessage(chatId, 'Де ви знаходитесь?', option);
 }
 
-function stepTwoChooseRawType(msg) {
+function stepTwoChooseRawType(chatId) {
   // Options for displaying keyboard that asks user to choose raw types
   var options = {
     reply_markup: {
@@ -94,7 +104,7 @@ function stepTwoChooseRawType(msg) {
   };
 
   // Step-2: choose raw material that you would like to give for recycling
-  return bot.sendMessage(msg.chat.id, 'Оберіть тип сировини, який ви хочете здати?', options);
+  return bot.sendMessage(chatId, 'Оберіть тип сировини, який ви хочете здати?', options);
 }
 
 // Step-2: responce with closes recycling point
@@ -104,7 +114,7 @@ function sendStepTwoResponce(chatId, callbackQuery, userLocation) {
 
   // Step-2: Responce with closes recycing point
   bot.answerCallbackQuery(callbackQuery.id).then(function() {
-    bot.sendMessage(chatId, 'Найближчий пункт для прийому: ' + closesRecyclingPoint.description);
+    bot.sendMessage(chatId, 'Найближчий пункт для прийому:\n\n' + closesRecyclingPoint.description);
   });
 
   setTimeout(function() {
