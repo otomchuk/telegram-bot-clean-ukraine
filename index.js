@@ -27,17 +27,26 @@ bot.onText(/^\/start/, function(msg) {
       };
 
       stepTwoChooseRawType(msg).then(function() {
-        bot.on('callback_query', function(rawType) {
+        bot.on('callback_query', function(callbackQuery) {
 
-          sendStepTwoResponce(msg, rawType.data, userLocation);
+          sendStepTwoResponce(msg, callbackQuery, userLocation);
 
           setTimeout(function() {
-            stepThreeChooseWhatToDo(msg);
-          }, 1000);
+            stepThreeChooseWhatToDo(msg).then(function() {
+              waitForStepTheeResponce();
+            });
+          }, 3000);
         });
       });
     });
   });
+});
+
+bot.onText(/^\/stop/, function(msg) {
+  bot.sendMessage(msg.chat.id, 'chao-chao');
+
+  bot.removeTextListener(/^\/start/);
+  bot.removeReplyListener();
 });
 
 function stepOneGetUserLocation(msg) {
@@ -79,16 +88,18 @@ function stepTwoChooseRawType(msg) {
 }
 
 // Step-2: responce with closes recycling point
-function sendStepTwoResponce(msg, rawType, userLocation) {
-  var recyclingPoints = DB.getRecyclingPointsFor(rawType);
+function sendStepTwoResponce(msg, callbackQuery, userLocation) {
+  var recyclingPoints = DB.getRecyclingPointsFor(callbackQuery.data);
   var closesRecyclingPoint = utils.findClosestLocation(recyclingPoints, userLocation.lat, userLocation.lng);
 
   // Step-2: Responce with closes recycing point
-  bot.sendLocation(msg.chat.id, closesRecyclingPoint.lat, closesRecyclingPoint.lng);
+  bot.answerCallbackQuery(callbackQuery.id).then(function() {
+    bot.sendMessage(msg.chat.id, 'Найближчий пункт для прийому: ' + closesRecyclingPoint.description);
+  });
 
   setTimeout(function() {
-    bot.sendMessage(msg.chat.id, 'Найближчий пункт для прийому: ' + closesRecyclingPoint.description);
-  }, 500);
+    bot.sendLocation(msg.chat.id, closesRecyclingPoint.lat, closesRecyclingPoint.lng);
+  }, 1000);
 }
 
 function stepThreeChooseWhatToDo(msg) {
@@ -105,4 +116,24 @@ function stepThreeChooseWhatToDo(msg) {
   };
 
   return bot.sendMessage(msg.chat.id, 'Вам підходить цей пункт прийому?', option);
+}
+
+function waitForStepTheeResponce() {
+  var showAllRecyclingPoint = 'список найближчих пунктів';
+  var newSearchRequest = 'новий пошук';
+  var stop = 'завершити';
+
+  bot.on('message', function(msg) {
+    if (msg.text.toLowerCase().includes(showAllRecyclingPoint)) {
+      bot.sendMessage(msg.chat.id, 'Показую');
+    }
+
+    if (msg.text.toLowerCase().indexOf(newSearchRequest) === 0) {
+      bot.sendMessage(msg.chat.id, 'Шукаю');
+    }
+
+    if (msg.text.toLowerCase().includes(stop)) {
+      bot.sendMessage(msg.chat.id, 'Завершую');
+    }
+  });
 }
