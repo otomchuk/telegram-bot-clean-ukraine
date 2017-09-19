@@ -2,6 +2,9 @@ const TelegramBot = require('node-telegram-bot-api');
 if (process.env.NODE_ENV !== 'production') require('dotenv').config();
 const TOKEN = process.env.TELEGRAM_BOT_API_TOKEN;
 
+var DB = require('./db.js');
+var utils = require('./utils.js');
+
 var options = {
   webHook: {
     port: process.env.PORT
@@ -31,8 +34,10 @@ bot.onText(/^\/start/, function(msg) {
   bot.sendMessage(msg.chat.id, 'Де ви знаходитесь?', option).then(function() {
     bot.once('location', function(msg) {
 
-      // Step-1: Responce with user coordinates
-      bot.sendMessage(msg.chat.id, 'Дякую, що поділилися вашим місцем знаходження.' + [msg.location.longitude, msg.location.latitude].join(';'));
+      var userLocation = {
+        lat: msg.location.latitude,
+        lng: msg.location.longitude
+      };
 
       // Options for displaying keyboard that asks user to choose raw types
       var options = {
@@ -54,10 +59,14 @@ bot.onText(/^\/start/, function(msg) {
       bot.sendMessage(msg.chat.id, 'Оберіть тип сировини, який ви хочете здати?', options).then(function() {
         bot.on('callback_query', function(rawType) {
 
-          // Step-2: Responce with selected raw type
-          bot.sendMessage(msg.chat.id, 'Ви обрали наступний тип сировини: ' + rawType.data);
+          var recyclingPoints = DB.getRecyclingPointsFor(rawType.data);
+          var closesRecyclingPoint = utils.findClosestLocation(recyclingPoints, userLocation.lat, userLocation.lng);
 
-          // TODO: Step-3
+          // Step-2: Responce with closes recycing point
+          bot.sendLocation(msg.chat.id, closesRecyclingPoint.lat, closesRecyclingPoint.lng);
+          bot.sendMessage(msg.chat.id, 'Найближчий пункт для прийому: ' + closesRecyclingPoint.description);
+
+          // TODO: Step-3: Show all | New search | End
         });
       });
     });
