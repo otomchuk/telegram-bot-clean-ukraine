@@ -50,6 +50,7 @@ bot.on('message', function(msg) {
   if (msg.text) {
     if (msg.text.toLowerCase().includes(showAllRecyclingPoint)) {
       var recyclingPoints = DB.getRecyclingPointsFor(selectedRawType);
+      recyclingPoints = recyclingPoints.slice(0, 3); // send olny first three RecyclingPoints
       var response = '';
 
       recyclingPoints.forEach(function(point) {
@@ -92,12 +93,12 @@ function stepTwoChooseRawType(chatId) {
     reply_markup: {
       inline_keyboard: [
         [
-          { text: 'Папір', callback_data: 'paper' },
-          { text: 'Скло', callback_data: 'glass' }
+          { text: '/1. Папір', callback_data: 'paper' },
+          { text: '/2. Скло', callback_data: 'glass' }
         ],
         [
-          { text: 'Пластик', callback_data: 'plastic' },
-          { text: 'Метал', callback_data: 'metal' }
+          { text: '/3. Пластик', callback_data: 'plastics' },
+          { text: '/4. Метал', callback_data: 'metals' }
         ],
       ]
     }
@@ -118,7 +119,7 @@ function sendStepTwoResponce(chatId, callbackQuery, userLocation) {
   });
 
   setTimeout(function() {
-    bot.sendLocation(chatId, closesRecyclingPoint.lat, closesRecyclingPoint.lng);
+    bot.sendLocation(chatId, closesRecyclingPoint.loc.coordinates[1], closesRecyclingPoint.loc.coordinates[0]);
   }, 1000);
 }
 

@@ -19,7 +19,7 @@ function findClosestLocation(list, latitude, longitude) {
   var closestLocationIndex = 0;
 
   for (var index = 0; index < list.length; index += 1) {
-    var dif = PythagorasEquirectangular(latitude, longitude, list[index].lat, list[index].lng);
+    var dif = PythagorasEquirectangular(latitude, longitude, list[index].loc.coordinates[1], list[index].loc.coordinates[0]);
     if (dif < mindif) {
       closestLocationIndex = index;
       mindif = dif;
