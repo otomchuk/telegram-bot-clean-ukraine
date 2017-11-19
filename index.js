@@ -1,8 +1,9 @@
 const TelegramBot = require('node-telegram-bot-api');
 if (process.env.NODE_ENV !== 'production') require('dotenv').config();
-const TOKEN = process.env.TELEGRAM_BOT_API_TOKEN;
+const TELEGRAM_BOT_API_TOKEN = process.env.TELEGRAM_BOT_API_TOKEN;
 
-var DB = require('./db.js');
+var db = require('./db.js');
+var placesAPI = require('./places-api.js');
 var utils = require('./utils.js');
 
 var options = {
@@ -12,23 +13,35 @@ var options = {
 };
 
 var url = process.env.APP_URL || 'https://telegram-bot-clean-ukraine.herokuapp.com:443';
-var bot = new TelegramBot(TOKEN, options);
+var bot = new TelegramBot(TELEGRAM_BOT_API_TOKEN, options);
 
-bot.setWebHook(url + '/bot' + TOKEN);
+bot.setWebHook(url + '/bot' + TELEGRAM_BOT_API_TOKEN);
 
 var userLocation = {};
 var selectedRawType = '';
+var stepTwoDebounce;
 
 // On command '/start'
 bot.onText(/^\/start/, function(msg) {
   stepOneGetUserLocation(msg.chat.id).then(function() {
     bot.once('location', function(msg) {
+      // TODO: move similar logic from command /location into shared func
       userLocation.lat = msg.location.latitude;
       userLocation.lng = msg.location.longitude;
 
-      stepTwoChooseRawType(msg.chat.id);
+      // NOTE: that is a fix for multiple call of stepTwoChooseRawType after /start was canceled
+      clearTimeout(stepTwoDebounce);
+      stepTwoDebounce = setTimeout(function() {
+        stepTwoChooseRawType(msg.chat.id);
+      }, 500);
     });
   });
+});
+
+bot.onText(/^\/location/, function(msg) {
+  var location = msg.text.replace('/location', '').trim();
+
+  handleLocationCommand(msg.chat.id, msg.message_id, location);
 });
 
 bot.on('callback_query', function(callbackQuery) {
@@ -44,12 +57,13 @@ bot.on('callback_query', function(callbackQuery) {
 
 var showAllRecyclingPoint = 'список найближчих пунктів';
 var newSearchRequest = 'новий пошук';
+var enterLocationManually = 'вручну';
 var stop = 'завершити';
 
 bot.on('message', function(msg) {
   if (msg.text) {
     if (msg.text.toLowerCase().includes(showAllRecyclingPoint)) {
-      var recyclingPoints = DB.getRecyclingPointsFor(selectedRawType);
+      var recyclingPoints = db.getRecyclingPointsFor(selectedRawType);
       recyclingPoints = recyclingPoints.slice(0, 3); // send olny first three RecyclingPoints
       var response = '';
 
@@ -67,17 +81,22 @@ bot.on('message', function(msg) {
     if (msg.text.toLowerCase().includes(stop)) {
       bot.sendMessage(msg.chat.id, 'Дякуємо за те, що сортуєте сміття!');
     }
+
+    if(msg.text.toLowerCase().includes(enterLocationManually)) {
+      sendCommandExplanation(msg.chat.id, '/location');
+    }
   }
 });
 
 function stepOneGetUserLocation(chatId) {
   // Options for displaying keyboard that asks users to share location
   var option = {
-    'parse_mode': 'Markdown',
-    'reply_markup': {
-      'one_time_keyboard': true,
-      'keyboard': [
-        [{ text: 'Моє розташування', request_location: true }],
+    parse_mode: 'Markdown',
+    reply_markup: {
+      one_time_keyboard: true,
+      keyboard: [
+        [{ text: 'Поширити моє місцезнаходження', request_location: true }],
+        ['Ввести вручну'],
         ['Відмова']
       ]
     }
@@ -110,7 +129,7 @@ function stepTwoChooseRawType(chatId) {
 
 // Step-2: responce with closes recycling point
 function sendStepTwoResponce(chatId, callbackQuery, userLocation) {
-  var recyclingPoints = DB.getRecyclingPointsFor(callbackQuery.data);
+  var recyclingPoints = db.getRecyclingPointsFor(callbackQuery.data);
   var closesRecyclingPoint = utils.findClosestLocation(recyclingPoints, userLocation.lat, userLocation.lng);
 
   // Step-2: Responce with closes recycing point
@@ -125,16 +144,89 @@ function sendStepTwoResponce(chatId, callbackQuery, userLocation) {
 
 function stepThreeChooseWhatToDo(chatId) {
   // Options for displaying keyboard that asks about next steps
-  var option = {
-    'parse_mode': 'Markdown',
-    'reply_markup': {
-      'one_time_keyboard': true,
-      'keyboard': [
+  var options = {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      one_time_keyboard: true,
+      keyboard: [
         ['Покажи список найближчих пунктів'],
         ['Новий пошук', 'Завершити роботу']
       ]
     }
   };
 
-  return bot.sendMessage(chatId, 'Вам підходить цей пункт прийому?', option);
+  return bot.sendMessage(chatId, 'Вам підходить цей пункт прийому?', options);
+}
+
+function handleLocationCommand(chatId, msgId, location) {
+  if (location.length > 0) {
+    placesAPI.getLocationPredictions(location).then(function(locationPredictions) {
+      if (locationPredictions.length > 1) {
+        generateKeyboardForPredictions(chatId, locationPredictions).then(function() {
+          bot.once('message', function(reply) {
+            handleLocationCommand(chatId, reply.message_id, reply.text);
+          });
+        });
+      } else {
+        placesAPI.getLocationDetails(locationPredictions[0].place_id).then(function(place) {
+          // TODO: move similar logic from command /start into shared func
+          userLocation.lat = place.geometry.location.lat;
+          userLocation.lng = place.geometry.location.lng;
+
+          // NOTE: reply with map, so user could see his location
+          bot.sendLocation(
+            chatId,
+            place.geometry.location.lat,
+            place.geometry.location.lng,
+            { reply_to_message_id: msgId }
+          );
+
+          setTimeout(function() {
+            stepTwoChooseRawType(chatId);
+          }, 1000);
+        });
+      }
+    });
+  } else {
+    sendCommandExplanation(
+      chatId,
+      '/location',
+      'Адреса не може бути порожньою.\n\n'
+    );
+  }
+}
+
+function generateKeyboardForPredictions(chatId, predictions) {
+  var options = {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      one_time_keyboard: true,
+      keyboard: []
+    }
+  };
+
+  options.reply_markup.keyboard = predictions.map(function(prediction) {
+    return [prediction.description];
+  });
+
+  return bot.sendMessage(
+    chatId,
+    'Було знайдено декілька адрес. Будь ласка, оберіть адресу зі списку, або введіть ще раз.',
+    options
+  );
+}
+
+function sendCommandExplanation(chatId, command, message) {
+  switch (command) {
+  case '/location':
+    var commandExplanation = 'Для того, щоб задати місце розташування вручну' +
+    ' введіть команду /location та зазнечте місто, вулию, будинок через кому.\n' +
+    'Наприклад:\n' +
+    '/location Львів, Площа ринок, 1\n';
+    (message !== undefined)
+      ? bot.sendMessage(chatId, message + commandExplanation)
+      : bot.sendMessage(chatId, commandExplanation);
+    break;
+    // no default
+  }
 }

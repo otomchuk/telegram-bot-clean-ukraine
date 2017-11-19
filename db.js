@@ -1,18 +1,18 @@
 var request = require('request');
 
-var RECYCLING_POINTS = [];
+var recyclingPoints = [];
 
 // Loading data on exporting
 request('https://recyclemap.org/api/places', function (error, response, responce) {
-  RECYCLING_POINTS = JSON.parse(responce);
+  recyclingPoints = JSON.parse(responce);
 });
 
 var getRecyclingPointsFor = function(rawType) {
-  return RECYCLING_POINTS.filter(function(recyclingPoint) {
+  return recyclingPoints.filter(function(recyclingPoint) {
     return recyclingPoint.categories.indexOf(rawType) !== -1;
   });
 };
 
-exports.default = RECYCLING_POINTS;
+exports.default = recyclingPoints;
 
 module.exports.getRecyclingPointsFor = getRecyclingPointsFor;

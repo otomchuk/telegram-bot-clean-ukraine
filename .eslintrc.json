@@ -3,6 +3,9 @@
         "node": true
     },
     "extends": "eslint:recommended",
+    "globals": {
+      "Promise": true
+    },
     "rules": {
         "indent": [
             "error",
