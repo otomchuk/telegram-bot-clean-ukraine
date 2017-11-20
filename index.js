@@ -12,6 +12,21 @@ var options = {
   }
 };
 
+var HUMAN_FRIENDLY_MATERIALS = {
+  1: 'paper',
+  2: 'glass',
+  3: 'plastics',
+  4: 'metals',
+  paper: 'paper',
+  glass: 'glass',
+  plastic: 'plastics',
+  metal: 'metals',
+  'папір': 'paper',
+  'скло': 'glass',
+  'пластик': 'plastics',
+  'метал': 'metals',
+};
+
 var url = process.env.APP_URL || 'https://telegram-bot-clean-ukraine.herokuapp.com:443';
 var bot = new TelegramBot(TELEGRAM_BOT_API_TOKEN, options);
 
@@ -40,22 +55,37 @@ bot.onText(/^\/start/, function(msg) {
   });
 });
 
+// On command '/location'
 bot.onText(/^\/location/, function(msg) {
   var location = msg.text.replace('/location', '').trim();
 
   handleLocationCommand(msg.chat.id, msg.message_id, location);
 });
 
+// On command '/materials'
+bot.onText(/^\/materials/, function(msg) {
+  var message = msg.text.replace('/materials', '').trim().toLowerCase(); // remove command
+
+  if (message.length > 0) {
+    // remove multiple spaces, comma + space and spaces for command and split it to array
+    var rawTypes = message.replace(/\s\s+|,\s|\s/g, ',').split(',');
+    state[msg.chat.id].selectedRawTypes = rawTypes.map(function(rawType) {
+      return HUMAN_FRIENDLY_MATERIALS[rawType];
+    });
+
+    sendStepTwoResponce(msg.chat.id);
+  }
+  // TODO: else
+});
+
+// On inline_keyboard button click
 bot.on('callback_query', function(callbackQuery) {
   var msg = callbackQuery.message;
   // TODO: check if state[msg.chat.id] exist and wasn't erased by /start command
-  state[msg.chat.id].selectedRawType = callbackQuery.data;
+  // NOTE: selectedRawTypes should be an array, because getRecyclingPointsFor requires it
+  state[msg.chat.id].selectedRawTypes = [callbackQuery.data];
 
-  sendStepTwoResponce(msg.chat.id, callbackQuery, state[msg.chat.id].userLocation);
-
-  setTimeout(function() {
-    stepThreeChooseWhatToDo(msg.chat.id);
-  }, 3000);
+  sendStepTwoResponce(msg.chat.id, callbackQuery.id);
 });
 
 var showAllRecyclingPoint = 'список найближчих пунктів';
@@ -66,7 +96,7 @@ var stop = 'завершити';
 bot.on('message', function(msg) {
   if (msg.text) {
     if (msg.text.toLowerCase().includes(showAllRecyclingPoint)) {
-      var recyclingPoints = db.getRecyclingPointsFor(state[msg.chat.id].selectedRawType);
+      var recyclingPoints = db.getRecyclingPointsFor(state[msg.chat.id].selectedRawTypes);
       recyclingPoints = recyclingPoints.slice(0, 3); // send olny first three RecyclingPoints
       var response = '';
 
@@ -111,6 +141,7 @@ function stepOneGetUserLocation(chatId) {
 
 function stepTwoChooseRawType(chatId) {
   // Options for displaying keyboard that asks user to choose raw types
+
   var options = {
     reply_markup: {
       inline_keyboard: [
@@ -127,22 +158,39 @@ function stepTwoChooseRawType(chatId) {
   };
 
   // Step-2: choose raw material that you would like to give for recycling
-  return bot.sendMessage(chatId, 'Оберіть тип сировини, який ви хочете здати?', options);
+  return bot.sendMessage(
+    chatId,
+    'Оберіть тип сировини, який ви хочете здати?\n\n' +
+    'Також ви можете задати одночасно декілька видів сировини через кому:\n' +
+    '/materials папір, пластик, метал\n' +
+    '/materials 1, 3, 4',
+    options
+  );
 }
 
 // Step-2: responce with closes recycling point
-function sendStepTwoResponce(chatId, callbackQuery, userLocation) {
-  var recyclingPoints = db.getRecyclingPointsFor(callbackQuery.data);
+function sendStepTwoResponce(chatId, callbackQueryId) {
+  var rawTypes = state[chatId].selectedRawTypes;
+  var userLocation = state[chatId].userLocation;
+
+  var recyclingPoints = db.getRecyclingPointsFor(rawTypes);
   var closesRecyclingPoint = utils.findClosestLocation(recyclingPoints, userLocation.lat, userLocation.lng);
 
   // Step-2: Responce with closes recycing point
-  bot.answerCallbackQuery(callbackQuery.id).then(function() {
-    bot.sendMessage(chatId, 'Найближчий пункт для прийому:\n\n' + closesRecyclingPoint.description);
-  });
+  callbackQueryId !== undefined
+    ? bot.answerCallbackQuery(callbackQueryId).then(function() {
+      bot.sendMessage(chatId, 'Найближчий пункт для прийому:\n\n' + closesRecyclingPoint.description);
+    })
+    : bot.sendMessage(chatId, 'Найближчий пункт для прийому:\n\n' + closesRecyclingPoint.description);
 
   setTimeout(function() {
     bot.sendLocation(chatId, closesRecyclingPoint.loc.coordinates[1], closesRecyclingPoint.loc.coordinates[0]);
   }, 1000);
+
+
+  setTimeout(function() {
+    stepThreeChooseWhatToDo(chatId);
+  }, 3000);
 }
 
 function stepThreeChooseWhatToDo(chatId) {
