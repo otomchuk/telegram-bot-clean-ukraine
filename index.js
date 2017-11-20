@@ -1,17 +1,14 @@
 const TelegramBot = require('node-telegram-bot-api');
-if (process.env.NODE_ENV !== 'production') require('dotenv').config();
-const TELEGRAM_BOT_API_TOKEN = process.env.TELEGRAM_BOT_API_TOKEN;
 
+// Communications with third-party API
 var db = require('./db.js');
 var placesAPI = require('./places-api.js');
+
+// Internal imports
+var state = require('./state-manager.js');
 var utils = require('./utils.js');
 
-var options = {
-  webHook: {
-    port: process.env.PORT
-  }
-};
-
+// Constants
 var HUMAN_FRIENDLY_MATERIALS = {
   1: 'paper',
   2: 'glass',
@@ -27,24 +24,34 @@ var HUMAN_FRIENDLY_MATERIALS = {
   'метал': 'metals',
 };
 
-var url = process.env.APP_URL || 'https://telegram-bot-clean-ukraine.herokuapp.com:443';
-var bot = new TelegramBot(TELEGRAM_BOT_API_TOKEN, options);
+// Config dotenv only for development environment
+if (process.env.NODE_ENV !== 'production') require('dotenv').config();
 
-bot.setWebHook(url + '/bot' + TELEGRAM_BOT_API_TOKEN);
+var options = {
+  webHook: {
+    port: process.env.PORT
+  }
+};
 
-var state = {};
+var url = process.env.APP_URL;
+var bot = new TelegramBot(process.env.TELEGRAM_BOT_API_TOKEN, options);
+
+bot.setWebHook(url + '/bot' + process.env.TELEGRAM_BOT_API_TOKEN);
+
 var stepTwoDebounce;
 
 // On command '/start'
 bot.onText(/^\/start/, function(msg) {
-  state[msg.chat.id] = {}; // clear data inside state
+  state.clearChat(msg.chat.id);
 
   stepOneGetUserLocation(msg.chat.id).then(function() {
     bot.once('location', function(msg) {
-      state[msg.chat.id].userLocation = {
+      var location = {
         lat: msg.location.latitude,
         lng: msg.location.longitude,
       };
+
+      state.setUserLocation(msg.chat.id, location);
 
       // NOTE: that is a fix for multiple call of stepTwoChooseRawType after /start was canceled
       clearTimeout(stepTwoDebounce);
@@ -69,9 +76,11 @@ bot.onText(/^\/materials/, function(msg) {
   if (message.length > 0) {
     // remove multiple spaces, comma + space and spaces for command and split it to array
     var rawTypes = message.replace(/\s\s+|,\s|\s/g, ',').split(',');
-    state[msg.chat.id].selectedRawTypes = rawTypes.map(function(rawType) {
+    var selectedRawTypes = rawTypes.map(function(rawType) {
       return HUMAN_FRIENDLY_MATERIALS[rawType];
     });
+
+    state.setSelectedRawTypes(msg.chat.id, selectedRawTypes);
 
     sendStepTwoResponce(msg.chat.id);
   }
@@ -83,7 +92,7 @@ bot.on('callback_query', function(callbackQuery) {
   var msg = callbackQuery.message;
   // TODO: check if state[msg.chat.id] exist and wasn't erased by /start command
   // NOTE: selectedRawTypes should be an array, because getRecyclingPointsFor requires it
-  state[msg.chat.id].selectedRawTypes = [callbackQuery.data];
+  state.setSelectedRawTypes(msg.chat.id, [callbackQuery.data]);
 
   sendStepTwoResponce(msg.chat.id, callbackQuery.id);
 });
@@ -96,7 +105,7 @@ var stop = 'завершити';
 bot.on('message', function(msg) {
   if (msg.text) {
     if (msg.text.toLowerCase().includes(showAllRecyclingPoint)) {
-      var recyclingPoints = db.getRecyclingPointsFor(state[msg.chat.id].selectedRawTypes);
+      var recyclingPoints = db.getRecyclingPointsFor(state.getSelectedRawTypes(msg.chat.id));
       recyclingPoints = recyclingPoints.slice(0, 3); // send olny first three RecyclingPoints
       var response = '';
 
@@ -141,7 +150,6 @@ function stepOneGetUserLocation(chatId) {
 
 function stepTwoChooseRawType(chatId) {
   // Options for displaying keyboard that asks user to choose raw types
-
   var options = {
     reply_markup: {
       inline_keyboard: [
@@ -170,11 +178,8 @@ function stepTwoChooseRawType(chatId) {
 
 // Step-2: responce with closes recycling point
 function sendStepTwoResponce(chatId, callbackQueryId) {
-  var rawTypes = state[chatId].selectedRawTypes;
-  var userLocation = state[chatId].userLocation;
-
-  var recyclingPoints = db.getRecyclingPointsFor(rawTypes);
-  var closesRecyclingPoint = utils.findClosestLocation(recyclingPoints, userLocation.lat, userLocation.lng);
+  var recyclingPoints = db.getRecyclingPointsFor(state.getSelectedRawTypes(chatId));
+  var closesRecyclingPoint = utils.findClosestLocation(recyclingPoints, state.getUserLocation(chatId));
 
   // Step-2: Responce with closes recycing point
   callbackQueryId !== undefined
@@ -220,10 +225,12 @@ function handleLocationCommand(chatId, msgId, location) {
         });
       } else {
         placesAPI.getLocationDetails(locationPredictions[0].place_id).then(function(place) {
-          state[chatId].userLocation = {
+          var location = {
             lat: place.geometry.location.lat,
             lng: place.geometry.location.lng,
           };
+
+          state.setUserLocation(chatId, location);
 
           // NOTE: reply with map, so user could see his location
           bot.sendLocation(
