@@ -17,17 +17,19 @@ var bot = new TelegramBot(TELEGRAM_BOT_API_TOKEN, options);
 
 bot.setWebHook(url + '/bot' + TELEGRAM_BOT_API_TOKEN);
 
-var userLocation = {};
-var selectedRawType = '';
+var state = {};
 var stepTwoDebounce;
 
 // On command '/start'
 bot.onText(/^\/start/, function(msg) {
+  state[msg.chat.id] = {}; // clear data inside state
+
   stepOneGetUserLocation(msg.chat.id).then(function() {
     bot.once('location', function(msg) {
-      // TODO: move similar logic from command /location into shared func
-      userLocation.lat = msg.location.latitude;
-      userLocation.lng = msg.location.longitude;
+      state[msg.chat.id].userLocation = {
+        lat: msg.location.latitude,
+        lng: msg.location.longitude,
+      };
 
       // NOTE: that is a fix for multiple call of stepTwoChooseRawType after /start was canceled
       clearTimeout(stepTwoDebounce);
@@ -46,9 +48,10 @@ bot.onText(/^\/location/, function(msg) {
 
 bot.on('callback_query', function(callbackQuery) {
   var msg = callbackQuery.message;
-  selectedRawType = callbackQuery.data;
+  // TODO: check if state[msg.chat.id] exist and wasn't erased by /start command
+  state[msg.chat.id].selectedRawType = callbackQuery.data;
 
-  sendStepTwoResponce(msg.chat.id, callbackQuery, userLocation);
+  sendStepTwoResponce(msg.chat.id, callbackQuery, state[msg.chat.id].userLocation);
 
   setTimeout(function() {
     stepThreeChooseWhatToDo(msg.chat.id);
@@ -63,7 +66,7 @@ var stop = 'завершити';
 bot.on('message', function(msg) {
   if (msg.text) {
     if (msg.text.toLowerCase().includes(showAllRecyclingPoint)) {
-      var recyclingPoints = db.getRecyclingPointsFor(selectedRawType);
+      var recyclingPoints = db.getRecyclingPointsFor(state[msg.chat.id].selectedRawType);
       recyclingPoints = recyclingPoints.slice(0, 3); // send olny first three RecyclingPoints
       var response = '';
 
@@ -169,9 +172,10 @@ function handleLocationCommand(chatId, msgId, location) {
         });
       } else {
         placesAPI.getLocationDetails(locationPredictions[0].place_id).then(function(place) {
-          // TODO: move similar logic from command /start into shared func
-          userLocation.lat = place.geometry.location.lat;
-          userLocation.lng = place.geometry.location.lng;
+          state[chatId].userLocation = {
+            lat: place.geometry.location.lat,
+            lng: place.geometry.location.lng,
+          };
 
           // NOTE: reply with map, so user could see his location
           bot.sendLocation(
