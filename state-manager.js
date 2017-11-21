@@ -1,16 +1,24 @@
 var state = {};
 
-function clearChat(chatId) {
+function createEmptyChatStore(chatId) {
   state[chatId] = {};
+}
+
+function isChatStoreExist(chatId) {
+  return !(state[chatId] === undefined);
 }
 
 // Getters
 function getUserLocation(chatId) {
-  return Object.assign({}, state[chatId].userLocation); // state assigned to new obj
+  return state[chatId].userLocation
+    ? Object.assign({}, state[chatId].userLocation)
+    : undefined; // state assigned to new obj
 }
 
 function getSelectedRawTypes(chatId) {
-  return state[chatId].selectedRawTypes.slice(0); // state copied to new array
+  return state[chatId].selectedRawTypes
+    ? state[chatId].selectedRawTypes.slice(0)
+    : undefined; // state copied to new array
 }
 
 // Setters
@@ -25,7 +33,8 @@ function setSelectedRawTypes(chatId, rawTypes) {
 exports.default = state;
 
 module.exports = {
-  clearChat: clearChat,
+  createEmptyChatStore: createEmptyChatStore,
+  isChatStoreExist: isChatStoreExist,
 
   getUserLocation: getUserLocation,
   getSelectedRawTypes: getSelectedRawTypes,

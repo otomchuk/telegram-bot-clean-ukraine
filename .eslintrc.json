@@ -6,6 +6,12 @@
     "globals": {
       "Promise": true
     },
+    "parserOptions":{
+      "ecmaVersion": 6,
+      "ecmaFeatures": {
+        "experimentalObjectRestSpread": true
+      }
+    },
     "rules": {
         "indent": [
             "error",

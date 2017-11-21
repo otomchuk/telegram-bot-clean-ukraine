@@ -32,6 +32,15 @@ function findClosestLocation(list, location) {
   return list[closestLocationIndex];
 }
 
+function replyWithDelay(delay, func, ...args) {
+  // NOTE: debounce effect
+  // ISSUE: fix for multiple call of stepTwoChooseRawType
+  // REPRODUCE: /start was canceled or called multiple times in a row
+  clearTimeout(this[func.name]);
+  this[func.name] = setTimeout(function() { func(...args); }, delay);
+}
+
 module.exports = {
-  findClosestLocation: findClosestLocation
+  findClosestLocation: findClosestLocation,
+  replyWithDelay: replyWithDelay,
 };
