@@ -8,21 +8,7 @@ var placesAPI = require('./places-api.js');
 var state = require('./state-manager.js');
 var utils = require('./utils.js');
 
-// Constants
-var HUMAN_FRIENDLY_MATERIALS = {
-  1: 'paper',
-  2: 'glass',
-  3: 'plastics',
-  4: 'metals',
-  paper: 'paper',
-  glass: 'glass',
-  plastic: 'plastics',
-  metal: 'metals',
-  'папір': 'paper',
-  'скло': 'glass',
-  'пластик': 'plastics',
-  'метал': 'metals',
-};
+var CONSTANTS = require('./constants.js').default;
 
 // Config dotenv only for development environment
 if (process.env.NODE_ENV !== 'production') require('dotenv').config();
@@ -67,7 +53,7 @@ bot.onText(/^\/location|\/l/, function(msg) {
     : sendCommandExplanation(
       msg.chat.id,
       '/location',
-      'Адреса не може бути порожньою.\n\n'
+      CONSTANTS.ERROR_ADDRESS_IS_EMPTY
     );
 });
 
@@ -81,7 +67,7 @@ bot.onText(/^\/materials|\/m/, function(msg) {
       // remove multiple spaces, comma + space and spaces for command and split it to array
       var rawTypes = message.replace(/\s\s+|,\s|\s/g, ',').split(',');
       var selectedRawTypes = rawTypes.map(function(rawType) {
-        return HUMAN_FRIENDLY_MATERIALS[rawType];
+        return CONSTANTS.HUMAN_FRIENDLY_MATERIALS[rawType];
       });
 
       state.setSelectedRawTypes(msg.chat.id, selectedRawTypes);
@@ -91,15 +77,13 @@ bot.onText(/^\/materials|\/m/, function(msg) {
       sendCommandExplanation(
         msg.chat.id,
         '/materials',
-        'Ви не вказали жодного матеріалу.\n\n'
+        CONSTANTS.ERROR_MATERIALS_ARE_EMPTY
       );
     }
   } else {
     bot.sendMessage(
       msg.chat.id,
-      'Перед тим як вказати матеріали, будь ласка, зазначте місцерозташування' +
-      ' поширивши його після запуску команди /start' +
-      ', aбо вручню за допомогою комади /location.'
+      CONSTANTS.ERROR_LOCATION_NOT_SPECIFIED
     );
   }
 });
@@ -117,9 +101,7 @@ bot.on('callback_query', function(callbackQuery) {
     } else {
       bot.sendMessage(
         msg.chat.id,
-        'Упс, ми вже забули нашу останню переписку.' +
-        ' Будь ласка, введіть команду /start для початку пошуку пунтку прийому' +
-        ', або команду /location щоб задати ваше місцерозташування вручну.'
+        CONSTANTS.ERROR_CHAT_STORE_IS_EMPTY
       );
     }
   });
@@ -132,23 +114,23 @@ function stepOneGetUserLocation(chatId) {
     reply_markup: {
       one_time_keyboard: true,
       keyboard: [
-        [{ text: 'Поширити моє місцезнаходження', request_location: true }],
-        ['Ввести вручну'],
+        [{ text: CONSTANTS.BUTTON_SHARE_LOCATION, request_location: true }],
+        [CONSTANTS.BUTTON_WRITE_LOCATION_MANUALLY],
       ]
     }
   };
 
   // Step-1: where are you located
-  return bot.sendMessage(chatId, 'Де ви знаходитесь?', options)
+  return bot.sendMessage(chatId, CONSTANTS.QUESTION_YOUR_LOCATION, options)
     .then(function() {
       bot.once('message', function(reply) {
-        if (reply.text && reply.text.toLowerCase().includes('вручну')) {
+        if (reply.text === CONSTANTS.BUTTON_WRITE_LOCATION_MANUALLY) {
           var newOptions = {
             parse_mode: 'Markdown',
             reply_markup: {
               one_time_keyboard: true,
               keyboard: [
-                [{ text: 'Поширити моє місцезнаходження', request_location: true }],
+                [{ text: CONSTANTS.BUTTON_SHARE_LOCATION, request_location: true }],
               ]
             }
           };
@@ -170,12 +152,12 @@ function stepTwoChooseRawType(chatId) {
     reply_markup: {
       inline_keyboard: [
         [
-          { text: '1. Папір', callback_data: 'paper' },
-          { text: '2. Скло', callback_data: 'glass' }
+          { text: CONSTANTS.BUTTON_PAPER, callback_data: 'paper' },
+          { text: CONSTANTS.BUTTON_GLASS, callback_data: 'glass' }
         ],
         [
-          { text: '3. Пластик', callback_data: 'plastics' },
-          { text: '4. Метал', callback_data: 'metals' }
+          { text: CONSTANTS.BUTTON_PLASTIC, callback_data: 'plastics' },
+          { text: CONSTANTS.BUTTON_METAL, callback_data: 'metals' }
         ],
       ]
     }
@@ -184,10 +166,7 @@ function stepTwoChooseRawType(chatId) {
   // Step-2: choose raw material that you would like to give for recycling
   return bot.sendMessage(
     chatId,
-    'Оберіть тип сировини, який ви хочете здати?\n\n' +
-    'Також ви можете задати одночасно декілька видів сировини через кому:\n' +
-    '/materials папір, пластик, метал\n' +
-    '/materials 1, 3, 4',
+    CONSTANTS.QUESTION_CHOOSE_RAW_TYPES + CONSTANTS.HELP_COMMAND_MATERIALS,
     options
   );
 }
@@ -201,7 +180,7 @@ function sendStepTwoResponce(chatId) {
 
   bot.sendMessage(
     chatId,
-    'Найближчий пункт для прийому:\n\n' + generateRecyclePointDetails(closesRecyclingPoint),
+    CONSTANTS.RESPONCE_CLOSEST_RECYCLE_POINT + generateRecyclePointDetails(closesRecyclingPoint),
     { parse_mode: 'markdown', reply_markup: { remove_keyboard: true } }
   );
 
@@ -223,13 +202,13 @@ function stepThreeChooseWhatToDo(chatId) {
     reply_markup: {
       one_time_keyboard: true,
       keyboard: [
-        ['Покажи список найближчих пунктів'],
-        ['Новий пошук', 'Завершити роботу']
+        [CONSTANTS.BUTTON_CLOSEST_RECYCLE_POINTS],
+        [CONSTANTS.BUTTON_NEW_SEARCH, CONSTANTS.BUTTON_END_SEARCH]
       ]
     }
   };
 
-  return bot.sendMessage(chatId, 'Вам підходить цей пункт прийому?', options)
+  return bot.sendMessage(chatId, CONSTANTS.QUESTION_IS_SUITABLE_FOR_YOU, options)
     .then(function() {
       bot.once('message', function(reply) {
         sendStepThreeResponce(reply.chat.id, reply.message_id, reply.text);
@@ -238,15 +217,12 @@ function stepThreeChooseWhatToDo(chatId) {
 }
 
 function sendStepThreeResponce(chatId, replyMsgId, msgText) {
-  var showAllRecyclingPoint = 'список найближчих пунктів';
-  var newSearchRequest = 'новий пошук';
-  var stop = 'завершити';
-
-  if (msgText.toLowerCase().includes(showAllRecyclingPoint)) {
+  if (msgText === CONSTANTS.BUTTON_CLOSEST_RECYCLE_POINTS) {
     var recyclingPoints = db.getRecyclingPointsFor(state.getSelectedRawTypes(chatId));
+    // TODO: send closest recycle points instead of first three from db list
     recyclingPoints = recyclingPoints.slice(0, 3); // send olny first three RecyclingPoints
-    var response = '';
 
+    var response = '';
     recyclingPoints.forEach(function(point) {
       response += generateRecyclePointDetails(point, { isShort: true }) + '\n\n';
     });
@@ -258,14 +234,14 @@ function sendStepThreeResponce(chatId, replyMsgId, msgText) {
     );
   }
 
-  if (msgText.toLowerCase().indexOf(newSearchRequest) === 0) {
+  if (msgText === CONSTANTS.BUTTON_NEW_SEARCH) {
     stepTwoChooseRawType(chatId);
   }
 
-  if (msgText.toLowerCase().includes(stop)) {
+  if (msgText === CONSTANTS.BUTTON_END_SEARCH) {
     bot.sendMessage(
       chatId,
-      'Дякуємо за те, що сортуєте сміття!',
+      CONSTANTS.RESPONCE_THANKS,
       { reply_to_message_id: replyMsgId, reply_markup: { remove_keyboard: true } }
     );
   }
@@ -279,7 +255,7 @@ function setUserLocationManually(chatId, msgId, desiredLocation) {
         reject (
           bot.sendMessage(
             chatId,
-            'Ми не можемо розпізнати введене вами місцерозташування.'
+            CONSTANTS.ERROR_ADDRESS_IS_INVALID
           )
         );
         break;
@@ -331,7 +307,7 @@ function generateKeyboardForPredictions(chatId, predictions) {
 
   return bot.sendMessage(
     chatId,
-    'Було знайдено декілька адрес. Будь ласка, оберіть адресу зі списку, або введіть ще раз.',
+    CONSTANTS.RESPONCE_MULTIPLE_LOCATIONS_FOUND,
     options
   );
 }
@@ -355,26 +331,16 @@ function generateRecyclePointDetails(recyclePoint, isShort) {
 }
 
 function sendCommandExplanation(chatId, command, message, options) {
-  var commandExplanation = undefined;
   switch (command) {
   case '/location':
-    commandExplanation = 'Для того, щоб задати місце розташування вручну' +
-    ' введіть команду /location та зазнечте місто, вулию, будинок через кому.\n\n' +
-    'Наприклад:\n' +
-    '/location Львів, Площа ринок, 1\n';
     (message !== undefined)
-      ? bot.sendMessage(chatId, message + commandExplanation, options)
-      : bot.sendMessage(chatId, commandExplanation, options);
+      ? bot.sendMessage(chatId, message + CONSTANTS.HELP_COMMAND_LOCATION, options)
+      : bot.sendMessage(chatId, CONSTANTS.HELP_COMMAND_LOCATION, options);
     break;
   case '/materials':
-    commandExplanation = 'Для того, щоб задати матеріали вручну' +
-    ' введіть команду /materials та зазнечте їх назви або номери через кому.\n\n' +
-    'Наприклад:\n' +
-    '/materials папір, пластик, метал\n' +
-    '/materials 1, 3, 4';
     (message !== undefined)
-      ? bot.sendMessage(chatId, message + commandExplanation, options)
-      : bot.sendMessage(chatId, commandExplanation, options);
+      ? bot.sendMessage(chatId, message + CONSTANTS.HELP_COMMAND_MATERIALS, options)
+      : bot.sendMessage(chatId, CONSTANTS.HELP_COMMAND_MATERIALS, options);
     break;
     // no default
   }
